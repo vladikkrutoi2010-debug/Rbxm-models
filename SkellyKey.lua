@@ -1,210 +1,255 @@
+--Unsubcribe To Mai And This script is free Sub
+--Credit to RegularVynixu for door replicator
+
 -- Services
 
 local Players = game:GetService("Players")
 local TS = game:GetService("TweenService")
 local ReSt = game:GetService("ReplicatedStorage")
+local PPS = game:GetService("ProximityPromptService")
 
 -- Variables
 
 local Plr = Players.LocalPlayer
 local Char = Plr.Character or Plr.CharacterAdded:Wait()
 local Hum = Char:WaitForChild("Humanoid")
-local Root = Char:WaitForChild("HumanoidRootPart")
 
 local SelfModules = {
     Functions = loadstring(game:HttpGet("https://raw.githubusercontent.com/RegularVynixu/Utilities/main/Functions.lua"))(),
+    DoorReplication = loadstring(game:HttpGet("https://pastebin.com/raw/2PtmV73E"))(),
 }
-
 local Assets = {
-    Door = "https://raw.githubusercontent.com/vladikkrutoi2010-debug/Rbxm-models/main/SkeletonDoor.rbxm",
+    KeyItem = game:GetObjects("rbxassetid://11910959676")[1],
+  
+
 }
-
-local DoorReplication = {}
-
--- Misc Functions
-
-local function openDoor(doorTable)
-    doorTable.Debug.OnDoorPreOpened()
-    doorTable.Model:SetAttribute("Opened", true)
-
-    if doorTable.Model:FindFirstChild("Lock") then
-        -- Unlock visual
-
-        doorTable.Model.Lock.Base.UnlockPrompt.Enabled = false
-        doorTable.Model.Lock.Base.UnlockPrompt:Destroy()
-    end
-
-    -- Door opening visual
-
-    if doorTable.Model:FindFirstChild("Light") then
-        doorTable.Model.Light.Light.Color = Color3.fromRGB(197, 113, 88)
-        doorTable.Model.Light.Light.Attachment.PointLight.Enabled = true
-        doorTable.Model.Light.Light.Hit:Play()
-    end
-    
-    doorTable.Model.Door.CanCollide = false
-    doorTable.Model.Door.Open:Play()
-    doorTable.Model.Hidden:Destroy()
-
-    task.spawn(function()
-        local knobC1 = doorTable.Model.Hinge.Knob.C1
-
-        TS:Create(doorTable.Model.Hinge.Knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {C1 = knobC1 * CFrame.Angles(0, 0, math.rad(-35))}):Play()
-        task.wait(0.15)
-        TS:Create(doorTable.Model.Hinge.Knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {C1 = knobC1}):Play()
-    end)
-
-    TS:Create(doorTable.Model.Hinge, TweenInfo.new(doorTable.Config.FastOpen and 0.15 or 0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {CFrame = doorTable.Model.Hinge.CFrame * CFrame.Angles(0, math.rad(-90), 0)}):Play()
-
-    -- Next room preparations
-
-    local nextRoom = workspace.CurrentRooms:FindFirstChild(tonumber(doorTable.Model.Parent.Name) + 1)
-
-    if nextRoom then
-        for _, v in next, {"Assets", "Light_Fixtures"} do
-            if nextRoom:FindFirstChild(v) then
-                for _, v2 in next, nextRoom[v]:GetDescendants() do
-                    if string.find(v2.ClassName, "Light") and not v2.Enabled then
-                        v2.Enabled = true
-                    end
-                end
-            end
-        end
-    end
-
-    doorTable.Debug.OnDoorOpened()
-end
 
 -- Functions
 
-DoorReplication.CreateDoor = function(config)
-    -- Configs setup
+local function replicateDoor(room)
+    local originalDoor = room:FindFirstChild("Door")
 
-    for _, v in next, {"Key", "Lockpick"} do
-        if not table.find(config.CustomKeyNames, v) then
-            table.insert(config.CustomKeyNames, v)
-        end
-    end
+    if originalDoor then
+        local door = SelfModules.DoorReplication.CreateDoor({
+            Locked = room:WaitForChild("Assets"):WaitForChild("KeyObtain", 0.3) ~= nil,
+            Sign = true,
+            Light = true,
+            Barricaded = false,
+            CustomKeyNames = {"Skeleton Key"},
+            DestroyKey = false,
+            GuidingLight = true,
+            FastOpen = false,
+        })
 
-    -- Model
-
-    local model = Assets.Door:Clone()
-    model.Door.MaterialVariant = "PlywoodALT"
-    model.Sign.MaterialVariant = "Plywood"
-
-    if not config.Barricaded then
-        model.Boards:Destroy()
+        door.Model.Name = "FakeDoor"
+        door.Model:SetPrimaryPartCFrame(originalDoor.PrimaryPart.CFrame)
+        door.Model.Parent = room
+        SelfModules.DoorReplication.ReplicateDoor(door)
+        originalDoor:Destroy()
         
-        if not config.Locked then
-            model.Lock:Destroy()
-        end
+        door.Debug.OnDoorOpened = function()
+            local key = Char:FindFirstChild(Assets.KeyItem.Name) or Char:FindFirstChild("Key")
 
-        if config.Sign == false then
-            model.Sign:Destroy()
-            model.Gui:Destroy()
-        end
-
-        if config.Light == false then
-            model.Light:Destroy()
-        end
-    else
-        model.Lock:Destroy()
-        model.Sign:Destroy()
-        model.Gui:Destroy()
-    end
+            if key then
+                if key.Name == Assets.KeyItem.Name then
+                    local uses = key:GetAttribute("Uses") - 1
     
-    return {
-        Model = model,
-        Config = config,
-        Debug = {
-            OnDoorPreOpened = function() end,
-            OnDoorOpened = function() end,
-        },
-    }
-end
-
-DoorReplication.ReplicateDoor = function(doorTable)
-    -- Pre-check
-
-    if not doorTable.Model.Parent then
-        warn("Failure - Parent the door before replicating it")
-        return
-    
-    elseif doorTable.Config.Barricaded then
-        warn("Failure - Attempt to replicate a barricaded door")
-        return
-    end
-
-    -- Guiding light
-
-    if doorTable.Config.GuidingLight ~= false and doorTable.Model.Parent:GetAttribute("IsDark") then
-        task.spawn(function()
-            if not doorTable.Model.Door.LightAttach.HelpLight.Enabled then
-                task.wait(15)
-            end
-
-            if doorTable.Model.Parent and not doorTable.Model:GetAttribute("Opened") then
-                doorTable.Model.Door.LightAttach.HelpLight.Enabled = true
-                doorTable.Model.Door.LightAttach.HelpParticle.Enabled = true
-
-                TS:Create(doorTable.Model.Door.LightAttach.HelpLight, TweenInfo.new(2), {Brightness = 0.5}):Play()
-            end
-        end)
-    end
-
-    -- Connections
-
-    local connections = {}
-
-    if doorTable.Model:FindFirstChild("Lock") then
-        connections.unlockBegan = doorTable.Model.Lock.Base.UnlockPrompt.PromptButtonHoldBegan:Connect(function()
-            for _, v in next, doorTable.Config.CustomKeyNames do
-                local key = Char:FindFirstChild(v)
-
-                if key and key:FindFirstChild("Animations") and key.Animations:FindFirstChild("use") then
-                    Hum:LoadAnimation(key.Animations.use):Play()
-
-                    return
-                end
-            end
-
-            firesignal(ReSt.Bricks.Caption.OnClientEvent, "You need a key!", true)
-        end)
-
-        connections.unlockTriggered = doorTable.Model.Lock.Base.UnlockPrompt.Triggered:Connect(function()
-            for _, v in next, doorTable.Config.CustomKeyNames do
-                local key = Char:FindFirstChild(v)
-
-                if key then
-                    for _, v in next, connections do
-                        v:Disconnect()
-                    end
-
-                    if doorTable.Config.DestroyKey ~= false then
+                    if uses == 69 then
                         key:Destroy()
+    
+                        SelfModules.Achievements.Get({
+                            Title = "Unbolting Hazard",
+                            Desc = "Indefinitely cursing yourself.",
+                            Reason = "Breaking the Skeleton Key.",
+                            Image = "https://media.discordapp.net/attachments/1035320391142477896/1036335501004779632/unknown.png",
+                        })
+                    else
+                        key:SetAttribute("Uses", uses)
                     end
-
-                    openDoor(doorTable)
-
-                    break
+    
+                    Hum.Health = math.max(Hum.Health - 10, 0)
+                    workspace.Curse:Play()
+                else
+                    key:Destroy()
                 end
             end
-        end)
-    else
-        task.spawn(function()
-            while doorTable.Model.Parent and Root do
-                if (Root.Position - doorTable.Model.PrimaryPart.Position).Magnitude <= 15 then
-                    openDoor(doorTable)
-    
-                    break
-                end
-    
-                task.wait()
-            end
-        end)
+        end
     end
 end
 
 -- Scripts
 
-return DoorReplication
+if typeof(Assets.KeyItem) ~= "Instance" then
+    return
+end
+
+Assets.KeyItem.Parent = game.Players.LocalPlayer.Backpack
+
+-- Door replication setup
+
+task.spawn(function()
+    for _, v in next, workspace.CurrentRooms:GetChildren() do
+        if v:FindFirstChild("Door") and v.Door:FindFirstChild("Lock") then
+            replicateDoor(v)
+        end
+    end
+    
+    workspace.CurrentRooms.DescendantAdded:Connect(function(des)
+        if des.Name == "Lock" and des.Parent.Name == "Door" then
+            task.wait(0.3)
+
+            if des.Parent then
+                replicateDoor(des.Parent.Parent)
+            end
+        end
+    end)
+end)
+
+-- Obtain cursed key
+
+KeyItem.Parent = game.Players.LocalPlayer.Backpack
+ firesignal(ReSt.Bricks.Caption.OnClientEvent, "You got Skeleton Key!", true)
+
+
+
+-- other chrustmas 
+
+local Player = game.Players.LocalPlayer
+local Character = Player.Character
+
+local WrappingTexture = 4516925393
+
+function Wrap(Part, Id)
+	if Part.Transparency > .9 then 
+		return 
+	end
+	
+	local PartFaces = {
+		"Front",
+		"Top",
+		"Bottom",
+		"Back",
+		"Left",
+		"Right"
+	}
+	
+	local texturecoro = coroutine.create(function()
+		for _,v in pairs(PartFaces) do
+			local Texture = Instance.new("Texture",Part)
+			Texture.Texture = "rbxassetid://"..Id
+			Texture.Face = v
+		end
+	end)
+	
+	coroutine.resume(texturecoro)
+	
+	local WrappedTag = Instance.new("BoolValue",Part)
+	WrappedTag.Name = "Textured"
+end
+
+function christmas_wrap_tool(Tool)
+	spawn(function()
+		for _,object in pairs(Tool:GetDescendants()) do
+			if not object:FindFirstChild("Textured") and object:IsA("BasePart") then
+				Wrap(object, WrappingTexture)
+			end
+		end
+	end)
+end
+
+local ItemNames = {"Door1","Door2","Knob","Wood","Knobs","Main","Blanket","Mattress","Part","Darker","Lighter","Shelves","Books","End","Cushion","Border","Face","Hour_Hand","Lines","Minute_Hand","Swing","Door","Wall_Strip","Flashlight","Key","Key_Obtain"}
+local C_Rooms = workspace.CurrentRooms
+
+function update()
+	local Room = C_Rooms[game.ReplicatedStorage.GameData.LatestRoom.Value]
+	local Door = Room.Door
+	
+	
+	--Fix the doors
+	
+	if Door:WaitForChild("Lock",1) then
+		local Lock = Door:FindFirstChild("Lock")
+		
+		spawn(function()
+			Wrap(Lock, WrappingTexture)
+			Wrap(Lock:WaitForChild("Metal",5), WrappingTexture)
+			Wrap(Lock:WaitForChild("Thing",5), WrappingTexture)
+		end)
+	end
+	
+	if Room.Assets:WaitForChild("LeverForGate",1) then
+		local Lever =  Room.Assets:FindFirstChild("LeverForGate")
+		
+		spawn(function()
+			Wrap(Lever.Main, WrappingTexture)
+			Wrap(Lever.Main.ToUnanchor.Handle, WrappingTexture)
+		end)
+	end
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	spawn(function()
+		Wrap(Door.Door:WaitForChild("Knob"), WrappingTexture)
+		Wrap(Door.Door:WaitForChild("Plate"), WrappingTexture)
+	end)
+	
+	--incase items spawn lol
+	spawn(function()
+		Room.DescendantAdded:Connect(function(newobj)
+			task.wait(.3)
+			for _,name in pairs(ItemNames) do
+				if newobj.Name == name and newobj:IsA("Model") then
+					christmas_wrap_tool(newobj)
+				end
+			end
+		end)
+	end)
+	
+	wrapcheck()
+end
+
+spawn(function()
+	game.ReplicatedStorage.GameData.LatestRoom.Changed:Connect(function()
+		update()
+	end)
+end)
+--newobj.Name == name
+
+--string.match(newobj.Name,name)
+
+
+
+spawn(function()
+	Character.DescendantAdded:Connect(function(newobj)
+		if newobj:IsA("Script") and string.match(newobj.Name,"ToolHandlerServer") then
+			christmas_wrap_tool(newobj.Parent)
+		end
+	end)
+end)
+
+
+workspace.DescendantAdded:Connect(function(newobj)
+	spawn(function()
+		for _,name in pairs(ItemNames) do
+			if newobj.Name == name and newobj:IsA("Instance") then
+				if newobj:IsA("Model") then
+					christmas_wrap_tool(newobj)
+				elseif newobj:IsA("BasePart") and newobj.Parent.Name ~= "Bookcase" then
+					Wrap(newobj, WrappingTexture)
+				end
+		
+			end
+		end
+		
+	end)
+end)
+
+
+update()
